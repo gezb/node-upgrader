@@ -1,0 +1,10 @@
+apiVersion: gezb.io/v1
+kind: NodeDrain
+metadata:
+  name: nodedrain-sample
+spec:
+  active: true
+  nodeName: rancher-desktop
+  expectedK8sVersion: v1.19.16
+  drain: false
+ 

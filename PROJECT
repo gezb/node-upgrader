@@ -1,0 +1,16 @@
+domain: gezb.io
+layout:
+- go.kubebuilder.io/v3
+projectName: node-upgrader
+repo: gezb/node-upgrader
+resources:
+- api:
+    crdVersion: v1
+    namespaced: true
+  controller: true
+  domain: gezb.io
+  group: gezb.io
+  kind: NodeDrain
+  path: gezb/node-upgrader/api/v1
+  version: v1
+version: "3"

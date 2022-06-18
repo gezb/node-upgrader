@@ -1,0 +1,92 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.8.0
+  creationTimestamp: null
+  name: nodedrains.gezb.io
+spec:
+  group: gezb.io
+  names:
+    kind: NodeDrain
+    listKind: NodeDrainList
+    plural: nodedrains
+    singular: nodedrain
+  scope: Namespaced
+  versions:
+  - name: v1
+    schema:
+      openAPIV3Schema:
+        description: NodeDrain is the Schema for the nodedrains API
+        properties:
+          apiVersion:
+            description: 'APIVersion defines the versioned schema of this representation
+              of an object. Servers should convert recognized schemas to the latest
+              internal value, and may reject unrecognized values. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources'
+            type: string
+          kind:
+            description: 'Kind is a string value representing the REST resource this
+              object represents. Servers may infer this from the endpoint the client
+              submits requests to. Cannot be updated. In CamelCase. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds'
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: NodeDrainSpec defines the desired state of NodeDrain
+            properties:
+              active:
+                type: boolean
+              drain:
+                type: boolean
+              expectedK8sVersion:
+                type: string
+              nodeName:
+                type: string
+            type: object
+          status:
+            description: NodeDrainStatus defines the observed state of NodeDrain
+            properties:
+              evictionPods:
+                description: EvictionPods is the total number of pods up for eviction
+                  from the start
+                type: integer
+              lastError:
+                description: LastError represents the latest error if any in the latest
+                  reconciliation
+                type: string
+              nodeName:
+                type: string
+              pendingPods:
+                description: PendingPods is a list of pending pods for eviction
+                items:
+                  type: string
+                type: array
+              phase:
+                description: Phase is the represtation of the maintenance progress
+                  (Running,Succeeded,Failed)
+                type: string
+              phasereason:
+                description: PhaseReson describes why phase is in an error state
+                type: string
+              runningPods:
+                description: RunningPods is a list of running pods for deletion
+                items:
+                  type: string
+                type: array
+              totalpods:
+                description: TotalPods is the total number of all pods on the node
+                  from the start
+                type: integer
+            type: object
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}
+status:
+  acceptedNames:
+    kind: ""
+    plural: ""
+  conditions: []
+  storedVersions: []
