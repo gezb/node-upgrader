@@ -74,7 +74,7 @@ var _ = Describe("NodeDrainer", func() {
 		var objs []client.Object
 		ndActive = &gezbv1.NodeDrain{
 			ObjectMeta: metav1.ObjectMeta{
-				Name:      "node-maintanance",
+				Name:      "node-drain",
 				Namespace: "test",
 			},
 			Spec: gezbv1.NodeDrainSpec{
@@ -85,7 +85,7 @@ var _ = Describe("NodeDrainer", func() {
 			}}
 		ndInactive = &gezbv1.NodeDrain{
 			ObjectMeta: metav1.ObjectMeta{
-				Name:      "node-maintanance-inactive",
+				Name:      "node-drain-inactive",
 				Namespace: "test",
 			},
 			Spec: gezbv1.NodeDrainSpec{
@@ -96,7 +96,7 @@ var _ = Describe("NodeDrainer", func() {
 			}}
 		ndActiveNoDrain = &gezbv1.NodeDrain{
 			ObjectMeta: metav1.ObjectMeta{
-				Name:      "node-maintanance-no-drain",
+				Name:      "node-drain-no-drain",
 				Namespace: "test",
 			},
 			Spec: gezbv1.NodeDrainSpec{
@@ -107,7 +107,7 @@ var _ = Describe("NodeDrainer", func() {
 			}}
 		ndInactiveNoDrain = &gezbv1.NodeDrain{
 			ObjectMeta: metav1.ObjectMeta{
-				Name:      "node-maintanance-inactive-no-drain",
+				Name:      "node-drain-inactive-no-drain",
 				Namespace: "test",
 			},
 			Spec: gezbv1.NodeDrainSpec{
@@ -259,7 +259,7 @@ var _ = Describe("NodeDrainer", func() {
 		It("should fail on non existing node", func() {
 			ndFail := &gezbv1.NodeDrain{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      "node-maintanance",
+					Name:      "node-drain",
 					Namespace: "test",
 				},
 				Spec: gezbv1.NodeDrainSpec{
@@ -298,7 +298,7 @@ var _ = Describe("NodeDrainer", func() {
 		It("should fail on non existing node", func() {
 			ndFail := &gezbv1.NodeDrain{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      "node-maintanance",
+					Name:      "node-drain",
 					Namespace: "test",
 				},
 				Spec: gezbv1.NodeDrainSpec{
@@ -338,7 +338,7 @@ var _ = Describe("NodeDrainer", func() {
 		It("should fail on non existing node", func() {
 			ndFail := &gezbv1.NodeDrain{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      "node-maintanance",
+					Name:      "node-drain",
 					Namespace: "test",
 				},
 				Spec: gezbv1.NodeDrainSpec{
@@ -364,7 +364,7 @@ var _ = Describe("NodeDrainer", func() {
 		It("should reconcile an active CR and and reports InvalidNodeVesion", func() {
 			ndWrongVersion := &gezbv1.NodeDrain{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      "node-maintanance",
+					Name:      "node-drain",
 					Namespace: "test",
 				},
 				Spec: gezbv1.NodeDrainSpec{
@@ -385,7 +385,7 @@ var _ = Describe("NodeDrainer", func() {
 		It("should reconcile an inactive CR and reports InvalidNodeVesion", func() {
 			ndWrongVersion := &gezbv1.NodeDrain{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      "node-maintanance",
+					Name:      "node-drain",
 					Namespace: "test",
 				},
 				Spec: gezbv1.NodeDrainSpec{
@@ -410,7 +410,7 @@ var _ = Describe("NodeDrainer", func() {
 		It("should reconcile a deleting active CR should uncordens node", func() {
 			ndUncorden := &gezbv1.NodeDrain{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:       "node-maintanance",
+					Name:       "node-drain",
 					Namespace:  "test",
 					Finalizers: []string{gezbv1.Finalizer},
 				},
@@ -442,7 +442,7 @@ var _ = Describe("NodeDrainer", func() {
 		It("should reconcile a deleting inactive CR should not uncorden node", func() {
 			ndUncorden := &gezbv1.NodeDrain{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:       "node-maintanance",
+					Name:       "node-drain",
 					Namespace:  "test",
 					Finalizers: []string{gezbv1.Finalizer},
 				},

@@ -149,25 +149,27 @@ func (r *NodeDrainReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 
 	// Add finalizer when object is created
 
-	if !node.Spec.Unschedulable {
-		if instance.Spec.Active {
-			r.setOwnerRefToNode(instance, node)
+	if instance.Spec.Active {
+		r.setOwnerRefToNode(instance, node)
+		if !node.Spec.Unschedulable {
 			r.logger.Info(fmt.Sprintf("Cordoning node %s", nodeName))
 			err := drain.RunCordonOrUncordon(r.drainer, node, true)
 			if err != nil {
 				return ctrl.Result{}, err
 			}
-			if instance.Spec.Drain {
-				err = drain.RunNodeDrain(r.drainer, nodeName)
-				if err != nil {
-					return ctrl.Result{}, err
-				}
+		}
+		if instance.Spec.Drain {
+			err = drain.RunNodeDrain(r.drainer, nodeName)
+			if err != nil {
+				return ctrl.Result{}, err
 			}
-		} else {
+		}
+	} else {
+		if !node.Spec.Unschedulable {
 			r.logger.Info(fmt.Sprintf("Cordoning node %s - Dry-run", nodeName))
-			if instance.Spec.Drain {
-				r.logger.Info(fmt.Sprintf("Draining  node %s - Dry-run", nodeName))
-			}
+		}
+		if instance.Spec.Drain {
+			r.logger.Info(fmt.Sprintf("Draining  node %s - Dry-run", nodeName))
 		}
 	}
 
@@ -178,7 +180,7 @@ func (r *NodeDrainReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	instance.Status.PendingPods = nil
 	err = r.Client.Status().Update(context.TODO(), instance)
 	if err != nil {
-		r.logger.Error(err, "Failed to update NodeMaintenance status")
+		r.logger.Error(err, "Failed to update NodeDrain status")
 		return r.onReconcileError(instance, err)
 	}
 	r.logger.Info("Reconcile completed", "nodeName", nodeName)
@@ -199,7 +201,7 @@ func (r *NodeDrainReconciler) SetupWithManager(mgr ctrl.Manager) error {
 
 func (r *NodeDrainReconciler) initNodeDrainerStatus(nodeDrain *gezbv1.NodeDrain, nodeName string) error {
 	// init Status field
-	if nodeDrain.Status.Phase == "" || nodeDrain.Status.Phase == gezbv1.MaintenanceDryRun {
+	if nodeDrain.Status.Phase == "" || (nodeDrain.Status.Phase == gezbv1.MaintenanceDryRun && nodeDrain.Spec.Active) {
 		nodeDrain.Status.NodeName = nodeName
 		if !nodeDrain.Spec.Active {
 			nodeDrain.Status.Phase = gezbv1.MaintenanceDryRun
@@ -239,19 +241,19 @@ func (r *NodeDrainReconciler) initNodeDrainerStatus(nodeDrain *gezbv1.NodeDrain,
 func (r *NodeDrainReconciler) fetchNode(nodeName string, expectedK8sVersion version.Version) (*corev1.Node, error) {
 	node, err := r.drainer.Client.CoreV1().Nodes().Get(context.Background(), nodeName, metav1.GetOptions{})
 	if err != nil && k8sErrors.IsNotFound(err) {
-		r.logger.Error(err, fmt.Sprintf("Node cannot be found '%s'", nodeName))
+		r.logger.Info(fmt.Sprintf("ERROR - Node cannot be found '%s'", nodeName))
 		return nil, err
 	} else if err != nil {
-		r.logger.Error(err, fmt.Sprintf("Failed to get node '%s", nodeName))
+		r.logger.Info(fmt.Sprintf("ERROR - Failed to get node '%s", nodeName))
 		return nil, err
 	}
 	nodeVersion, err := version.NewSemver(node.Status.NodeInfo.KubeletVersion)
 	if err != nil {
-		r.logger.Error(err, fmt.Sprintf("Failed to Parse node KubeletVersion from '%s'- Aborting Reconcile", node.Status.NodeInfo.KubeletVersion))
+		r.logger.Info(fmt.Sprintf("ERROR - Failed to Parse node KubeletVersion from '%s'- Aborting Reconcile", node.Status.NodeInfo.KubeletVersion))
 		return nil, InvalidNodeVersionError{}
 	}
 	if !expectedK8sVersion.Core().Equal(nodeVersion) {
-		r.logger.Info(fmt.Sprintf("Node version %s not equal to expected version %s for node '%s' - Aborting Reconcile", nodeVersion.String(), expectedK8sVersion.String(), nodeName))
+		r.logger.Info(fmt.Sprintf("ERROR - Node version %s not equal to expected version %s for node '%s' - Aborting Reconcile", nodeVersion.String(), expectedK8sVersion.String(), nodeName))
 		return nil, InvalidNodeVersionError{}
 	}
 	return node, nil
