@@ -22,6 +22,7 @@ import (
 var _ = Describe("NodeDrainer", func() {
 
 	var r *NodeDrainReconciler
+	var testNs *corev1.Namespace
 	var ndActive, ndInactive, ndActiveNoDrain, ndInactiveNoDrain *gezbv1.NodeDrain
 	var clObjs []client.Object
 
@@ -36,7 +37,7 @@ var _ = Describe("NodeDrainer", func() {
 		r.Reconcile(context.Background(), req)
 	}
 
-	checkSuccesfulReconcile := func(nodeDrain *gezbv1.NodeDrain, phase gezbv1.MaintenancePhase) *gezbv1.NodeDrain {
+	checkSuccessfulReconcile := func(nodeDrain *gezbv1.NodeDrain, phase gezbv1.MaintenancePhase) *gezbv1.NodeDrain {
 		drain := &gezbv1.NodeDrain{}
 		err := k8sClient.Get(context.TODO(), client.ObjectKeyFromObject(nodeDrain), drain)
 		Expect(err).NotTo(HaveOccurred())
@@ -45,13 +46,13 @@ var _ = Describe("NodeDrainer", func() {
 
 	}
 
-	checkFailedReconcile := func(nodeDrain *gezbv1.NodeDrain, phase gezbv1.MaintenancePhase, phaseReson gezbv1.PhaseReason) *gezbv1.NodeDrain {
+	checkFailedReconcile := func(nodeDrain *gezbv1.NodeDrain, phase gezbv1.MaintenancePhase, phaseReason gezbv1.PhaseReason) *gezbv1.NodeDrain {
 		drain := &gezbv1.NodeDrain{}
 		err := k8sClient.Get(context.TODO(), client.ObjectKeyFromObject(nodeDrain), drain)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(len(drain.Status.LastError)).NotTo(Equal(0))
 		Expect(drain.Status.Phase).To(Equal(phase))
-		Expect(drain.Status.PhaseReason).To(Equal(phaseReson))
+		Expect(drain.Status.PhaseReason).To(Equal(phaseReason))
 		return drain
 	}
 
@@ -116,11 +117,8 @@ var _ = Describe("NodeDrainer", func() {
 				Drain:              false,
 			}}
 
-		objs = getTestObjects()
-		clObjs = append(objs, ndActive, ndInactive, ndActiveNoDrain, ndInactiveNoDrain)
-
 		// create test ns on 1st run
-		testNs := &corev1.Namespace{
+		testNs = &corev1.Namespace{
 			ObjectMeta: metav1.ObjectMeta{
 				Name: "test",
 			},
@@ -130,6 +128,9 @@ var _ = Describe("NodeDrainer", func() {
 			Expect(err).ToNot(HaveOccurred())
 		}
 
+		objs = getTestObjects()
+		clObjs = append(objs, ndActive, ndInactive, ndActiveNoDrain, ndInactiveNoDrain)
+
 		for _, o := range clObjs {
 			err := k8sClient.Create(context.Background(), o)
 			Expect(err).ToNot(HaveOccurred())
@@ -137,10 +138,13 @@ var _ = Describe("NodeDrainer", func() {
 	})
 
 	AfterEach(func() {
-		stopTestEnv()
+		if err := k8sClient.Delete(context.Background(), testNs); err != nil {
+			Expect(err).ToNot(HaveOccurred())
+		}
+
 	})
 
-	Context("Node drian controller initialization test", func() {
+	Context("Node drain controller initialization test", func() {
 
 		It("Node drain should be initialized properly", func() {
 			r.initNodeDrainerStatus(ndActive, "node01")
@@ -187,17 +191,17 @@ var _ = Describe("NodeDrainer", func() {
 			ndActiveCopy := ndActive.DeepCopy()
 			ndActiveCopy.Status.Phase = gezbv1.MaintenanceRunning
 			r.initNodeDrainerStatus(ndActiveCopy, "node01")
-			maintanance := &gezbv1.NodeDrain{}
-			err := k8sClient.Get(context.TODO(), client.ObjectKeyFromObject(ndActive), maintanance)
+			nodeDrain := &gezbv1.NodeDrain{}
+			err := k8sClient.Get(context.TODO(), client.ObjectKeyFromObject(ndActive), nodeDrain)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(maintanance.Status.Phase).NotTo(Equal(gezbv1.MaintenanceRunning))
-			Expect(len(maintanance.Status.PendingPods)).NotTo(Equal(2))
-			Expect(maintanance.Status.EvictionPods).NotTo(Equal(2))
-			Expect(maintanance.Status.TotalPods).NotTo(Equal(2))
+			Expect(nodeDrain.Status.Phase).NotTo(Equal(gezbv1.MaintenanceRunning))
+			Expect(len(nodeDrain.Status.PendingPods)).NotTo(Equal(2))
+			Expect(nodeDrain.Status.EvictionPods).NotTo(Equal(2))
+			Expect(nodeDrain.Status.TotalPods).NotTo(Equal(2))
 		})
 	})
 
-	Context("Node drian controller initialization dry-run test", func() {
+	Context("Node drain controller initialization dry-run test", func() {
 
 		It("Node drain should be initialized in dry-run", func() {
 			r.initNodeDrainerStatus(ndInactive, "node01")
@@ -225,13 +229,13 @@ var _ = Describe("NodeDrainer", func() {
 			ndInactiveCopy := ndInactive.DeepCopy()
 			ndInactiveCopy.Status.Phase = gezbv1.MaintenanceDryRun
 			r.initNodeDrainerStatus(ndInactiveCopy, "node01")
-			maintanance := &gezbv1.NodeDrain{}
-			err := k8sClient.Get(context.TODO(), client.ObjectKeyFromObject(ndActive), maintanance)
+			nodeDrain := &gezbv1.NodeDrain{}
+			err := k8sClient.Get(context.TODO(), client.ObjectKeyFromObject(ndActive), nodeDrain)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(maintanance.Status.Phase).NotTo(Equal(gezbv1.MaintenanceDryRun))
-			Expect(len(maintanance.Status.PendingPods)).NotTo(Equal(2))
-			Expect(maintanance.Status.EvictionPods).NotTo(Equal(2))
-			Expect(maintanance.Status.TotalPods).NotTo(Equal(2))
+			Expect(nodeDrain.Status.Phase).NotTo(Equal(gezbv1.MaintenanceDryRun))
+			Expect(len(nodeDrain.Status.PendingPods)).NotTo(Equal(2))
+			Expect(nodeDrain.Status.EvictionPods).NotTo(Equal(2))
+			Expect(nodeDrain.Status.TotalPods).NotTo(Equal(2))
 		})
 
 	})
@@ -240,13 +244,12 @@ var _ = Describe("NodeDrainer", func() {
 
 		It("should reconcile once without failing", func() {
 			reconcileNodeDrain(ndActive)
-			checkSuccesfulReconcile(ndActive, gezbv1.MaintenanceSucceeded)
-			// Expect(len(drain))
+			checkSuccessfulReconcile(ndActive, gezbv1.MaintenanceSucceeded)
 		})
 
 		It("should reconcile and cordon node", func() {
 			reconcileNodeDrain(ndActive)
-			checkSuccesfulReconcile(ndActive, gezbv1.MaintenanceSucceeded)
+			checkSuccessfulReconcile(ndActive, gezbv1.MaintenanceSucceeded)
 			node := &corev1.Node{}
 			err := k8sClient.Get(context.TODO(), client.ObjectKey{Name: ndActive.Spec.NodeName}, node)
 			Expect(err).NotTo(HaveOccurred())
@@ -280,12 +283,12 @@ var _ = Describe("NodeDrainer", func() {
 
 		It("should reconcile once without failing", func() {
 			reconcileNodeDrain(ndInactive)
-			checkSuccesfulReconcile(ndInactive, gezbv1.MaintenanceDryRun)
+			checkSuccessfulReconcile(ndInactive, gezbv1.MaintenanceDryRun)
 		})
 
 		It("should reconcile and not cordon node", func() {
 			reconcileNodeDrain(ndInactive)
-			checkSuccesfulReconcile(ndInactive, gezbv1.MaintenanceDryRun)
+			checkSuccessfulReconcile(ndInactive, gezbv1.MaintenanceDryRun)
 			node := &corev1.Node{}
 			err := k8sClient.Get(context.TODO(), client.ObjectKey{Name: ndActive.Spec.NodeName}, node)
 			Expect(err).NotTo(HaveOccurred())
@@ -320,12 +323,12 @@ var _ = Describe("NodeDrainer", func() {
 
 		It("should reconcile once without failing", func() {
 			reconcileNodeDrain(ndInactive)
-			checkSuccesfulReconcile(ndInactive, gezbv1.MaintenanceDryRun)
+			checkSuccessfulReconcile(ndInactive, gezbv1.MaintenanceDryRun)
 		})
 
 		It("should reconcile and not cordon node", func() {
 			reconcileNodeDrain(ndInactive)
-			checkSuccesfulReconcile(ndInactive, gezbv1.MaintenanceDryRun)
+			checkSuccessfulReconcile(ndInactive, gezbv1.MaintenanceDryRun)
 			node := &corev1.Node{}
 			err := k8sClient.Get(context.TODO(), client.ObjectKey{Name: ndActive.Spec.NodeName}, node)
 			Expect(err).NotTo(HaveOccurred())
@@ -404,7 +407,7 @@ var _ = Describe("NodeDrainer", func() {
 
 	Context("Node Drain Controller uncordens node on removal of CR", func() {
 
-		It("should reconcile a deleting active CR should uncodens node", func() {
+		It("should reconcile a deleting active CR should uncordens node", func() {
 			ndUncorden := &gezbv1.NodeDrain{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:       "node-maintanance",
@@ -425,7 +428,7 @@ var _ = Describe("NodeDrainer", func() {
 			err = k8sClient.Delete(context.TODO(), ndUncorden)
 			Expect(err).NotTo(HaveOccurred())
 			reconcileNodeDrain(ndUncorden)
-			// node should now be Schedulable
+			// node should now be not be unschedulable
 			node := &corev1.Node{}
 			err = k8sClient.Get(context.TODO(), client.ObjectKey{Name: ndUncorden.Spec.NodeName}, node)
 			Expect(err).NotTo(HaveOccurred())
@@ -436,7 +439,7 @@ var _ = Describe("NodeDrainer", func() {
 			Expect(k8sErrors.IsNotFound(err)).To(BeTrue())
 		})
 
-		It("should reconcile a deleting inactive CR should not uncoden node", func() {
+		It("should reconcile a deleting inactive CR should not uncorden node", func() {
 			ndUncorden := &gezbv1.NodeDrain{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:       "node-maintanance",
@@ -457,7 +460,7 @@ var _ = Describe("NodeDrainer", func() {
 			err = k8sClient.Delete(context.TODO(), ndUncorden)
 			Expect(err).NotTo(HaveOccurred())
 			reconcileNodeDrain(ndUncorden)
-			// node should still not be schedulable
+			// node should still be unschedulable
 			node := &corev1.Node{}
 			err = k8sClient.Get(context.TODO(), client.ObjectKey{Name: ndUncorden.Spec.NodeName}, node)
 			Expect(err).NotTo(HaveOccurred())

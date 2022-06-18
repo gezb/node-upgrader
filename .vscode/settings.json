@@ -1,7 +1,10 @@
 {
     "makefile.extensionOutputFolder": "./.vscode",
     "cSpell.words": [
+        "Finalizers",
         "Kubelet",
-        "Kubernetes"
+        "Kubernetes",
+        "Uncorden",
+        "uncordens"
     ]
 }
