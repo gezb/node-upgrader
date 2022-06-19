@@ -4,7 +4,7 @@ This controller is designed to assist in upgrading Kubernetes clusters by being 
 
 The controller will validate that the node specified by `nodeName` is of the same verision as the one specified by `expectedK8sVersion` before it makes any changes as an extra check.
 
-The CRD can be used to just Ccrden a node by setting `drain` to `false`
+The CRD can be used to just corden a node by setting `drain` to `false`
 
 If using this controller to preform kubrnetes upgrades it is advisable to move this controller onto the new nodes before peforming draining of nodes the workflow for this might be create NodeDrain crds for all nodes with drain `false',  delete the node-drain controller pod causing it to be moved to one of the new nodes then you can switch `drain` to `true` to drain nodes as needed
 
@@ -33,7 +33,7 @@ You’ll need a Kubernetes cluster to run against. You can use [KIND](https://si
 
 ```sh
 make install
-```to
+```
 
 2. Build and push your image to the location specified by `IMG`:
 	
