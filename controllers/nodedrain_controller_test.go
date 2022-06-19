@@ -11,6 +11,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes/scheme"
+	"k8s.io/client-go/tools/record"
 	"k8s.io/utils/pointer"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -21,10 +22,13 @@ import (
 
 var _ = Describe("NodeDrainer", func() {
 
-	var r *NodeDrainReconciler
-	var testNs *corev1.Namespace
-	var ndActive, ndInactive, ndActiveNoDrain, ndInactiveNoDrain *gezbv1.NodeDrain
-	var clObjs []client.Object
+	var (
+		r                                                        *NodeDrainReconciler
+		testNs                                                   *corev1.Namespace
+		ndActive, ndInactive, ndActiveNoDrain, ndInactiveNoDrain *gezbv1.NodeDrain
+		clObjs                                                   []client.Object
+		fakeRecorder                                             *record.FakeRecorder
+	)
 
 	reconcileNodeDrain := func(nodeDrain *gezbv1.NodeDrain) {
 		// Mock request to simulate Reconcile() being called on an event for a watched resource .
@@ -60,11 +64,13 @@ var _ = Describe("NodeDrainer", func() {
 
 		startTestEnv()
 
+		fakeRecorder = record.NewFakeRecorder(5)
 		// Create a ReconcileNodeMaintenance object with the scheme and fake client
 		r = &NodeDrainReconciler{
-			Client: k8sClient,
-			Scheme: scheme.Scheme,
-			logger: ctrl.Log.WithName("unit test"),
+			Client:   k8sClient,
+			Scheme:   scheme.Scheme,
+			logger:   ctrl.Log.WithName("unit test"),
+			recorder: fakeRecorder,
 		}
 		initDrainer(r, cfg)
 
@@ -254,6 +260,50 @@ var _ = Describe("NodeDrainer", func() {
 			err := k8sClient.Get(context.TODO(), client.ObjectKey{Name: ndActive.Spec.NodeName}, node)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(node.Spec.Unschedulable).To(Equal(true))
+			// expect 2 events (cordon & drain)
+			Expect(len(fakeRecorder.Events)).To(Equal(2))
+		})
+
+		It("should fail on non existing node", func() {
+			ndFail := &gezbv1.NodeDrain{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "node-drain",
+					Namespace: "test",
+				},
+				Spec: gezbv1.NodeDrainSpec{
+					Active:             true,
+					NodeName:           "non-existing",
+					ExpectedK8sVersion: "1.19.8",
+					Drain:              true,
+				},
+			}
+			err := k8sClient.Delete(context.TODO(), ndActive)
+			Expect(err).NotTo(HaveOccurred())
+			err = k8sClient.Create(context.TODO(), ndFail)
+			Expect(err).NotTo(HaveOccurred())
+			reconcileNodeDrain(ndFail)
+			checkFailedReconcile(ndFail, gezbv1.MaintenanceFailed, gezbv1.FailureReasonNodeNotFound)
+			// expect 1 event
+			Expect(len(fakeRecorder.Events)).To(Equal(1))
+		})
+	})
+
+	Context("Node Drain controller reconciles a NodeDrain with drian false CR for a node in the cluster", func() {
+
+		It("should reconcile once without failing", func() {
+			reconcileNodeDrain(ndActiveNoDrain)
+			checkSuccessfulReconcile(ndActiveNoDrain, gezbv1.MaintenanceSucceeded)
+		})
+
+		It("should reconcile and cordon node", func() {
+			reconcileNodeDrain(ndActiveNoDrain)
+			checkSuccessfulReconcile(ndActiveNoDrain, gezbv1.MaintenanceSucceeded)
+			node := &corev1.Node{}
+			err := k8sClient.Get(context.TODO(), client.ObjectKey{Name: ndActiveNoDrain.Spec.NodeName}, node)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(node.Spec.Unschedulable).To(Equal(true))
+			// expect 1 events (cordon)
+			Expect(len(fakeRecorder.Events)).To(Equal(1))
 		})
 
 		It("should fail on non existing node", func() {
@@ -275,6 +325,49 @@ var _ = Describe("NodeDrainer", func() {
 			Expect(err).NotTo(HaveOccurred())
 			reconcileNodeDrain(ndFail)
 			checkFailedReconcile(ndFail, gezbv1.MaintenanceFailed, gezbv1.FailureReasonNodeNotFound)
+			// expect 1 event
+			Expect(len(fakeRecorder.Events)).To(Equal(1))
+		})
+	})
+
+	Context("Node Drain controller reconciles a Inactive NodeDrain CR for a node in the cluster", func() {
+
+		It("should reconcile once without failing", func() {
+			reconcileNodeDrain(ndInactive)
+			checkSuccessfulReconcile(ndInactive, gezbv1.MaintenanceDryRun)
+		})
+
+		It("should reconcile and not cordon node", func() {
+			reconcileNodeDrain(ndInactive)
+			checkSuccessfulReconcile(ndInactive, gezbv1.MaintenanceDryRun)
+			node := &corev1.Node{}
+			err := k8sClient.Get(context.TODO(), client.ObjectKey{Name: ndActive.Spec.NodeName}, node)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(node.Spec.Unschedulable).To(Equal(false))
+		})
+
+		It("should fail on non existing node", func() {
+			ndFail := &gezbv1.NodeDrain{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "node-drain",
+					Namespace: "test",
+				},
+				Spec: gezbv1.NodeDrainSpec{
+					Active:             true,
+					NodeName:           "non-existing",
+					ExpectedK8sVersion: "1.19.8",
+					Drain:              false,
+				},
+			}
+			ndFail.Spec.NodeName = ""
+			err := k8sClient.Delete(context.TODO(), ndActive)
+			Expect(err).NotTo(HaveOccurred())
+			err = k8sClient.Create(context.TODO(), ndFail)
+			Expect(err).NotTo(HaveOccurred())
+			reconcileNodeDrain(ndFail)
+			checkFailedReconcile(ndFail, gezbv1.MaintenanceFailed, gezbv1.FailureReasonNodeNotFound) // expect 1 event
+			// expect 1 error event
+			Expect(len(fakeRecorder.Events)).To(Equal(1))
 		})
 
 	})
@@ -315,46 +408,8 @@ var _ = Describe("NodeDrainer", func() {
 			Expect(err).NotTo(HaveOccurred())
 			reconcileNodeDrain(ndFail)
 			checkFailedReconcile(ndFail, gezbv1.MaintenanceFailed, gezbv1.FailureReasonNodeNotFound)
-		})
-
-	})
-
-	Context("Node Drain controller reconciles a In-active NodeDrain CR for a node in the cluster", func() {
-
-		It("should reconcile once without failing", func() {
-			reconcileNodeDrain(ndInactive)
-			checkSuccessfulReconcile(ndInactive, gezbv1.MaintenanceDryRun)
-		})
-
-		It("should reconcile and not cordon node", func() {
-			reconcileNodeDrain(ndInactive)
-			checkSuccessfulReconcile(ndInactive, gezbv1.MaintenanceDryRun)
-			node := &corev1.Node{}
-			err := k8sClient.Get(context.TODO(), client.ObjectKey{Name: ndActive.Spec.NodeName}, node)
-			Expect(err).NotTo(HaveOccurred())
-			Expect(node.Spec.Unschedulable).To(Equal(false))
-		})
-
-		It("should fail on non existing node", func() {
-			ndFail := &gezbv1.NodeDrain{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "node-drain",
-					Namespace: "test",
-				},
-				Spec: gezbv1.NodeDrainSpec{
-					Active:             true,
-					NodeName:           "non-existing",
-					ExpectedK8sVersion: "1.19.8",
-					Drain:              false,
-				},
-			}
-			ndFail.Spec.NodeName = ""
-			err := k8sClient.Delete(context.TODO(), ndActive)
-			Expect(err).NotTo(HaveOccurred())
-			err = k8sClient.Create(context.TODO(), ndFail)
-			Expect(err).NotTo(HaveOccurred())
-			reconcileNodeDrain(ndFail)
-			checkFailedReconcile(ndFail, gezbv1.MaintenanceFailed, gezbv1.FailureReasonNodeNotFound)
+			// expect 1 error event
+			Expect(len(fakeRecorder.Events)).To(Equal(1))
 		})
 
 	})
@@ -380,6 +435,8 @@ var _ = Describe("NodeDrainer", func() {
 			Expect(err).NotTo(HaveOccurred())
 			reconcileNodeDrain(ndWrongVersion)
 			checkFailedReconcile(ndWrongVersion, gezbv1.MaintenanceInvalid, gezbv1.FailureReasonInvalidNodeVersion)
+			// expect 1 error event
+			Expect(len(fakeRecorder.Events)).To(Equal(1))
 		})
 
 		It("should reconcile an inactive CR and reports InvalidNodeVesion", func() {
@@ -401,6 +458,8 @@ var _ = Describe("NodeDrainer", func() {
 			Expect(err).NotTo(HaveOccurred())
 			reconcileNodeDrain(ndWrongVersion)
 			checkFailedReconcile(ndWrongVersion, gezbv1.MaintenanceInvalid, gezbv1.FailureReasonInvalidNodeVersion)
+			// expect 1 error event
+			Expect(len(fakeRecorder.Events)).To(Equal(1))
 		})
 
 	})
@@ -437,6 +496,8 @@ var _ = Describe("NodeDrainer", func() {
 			err = k8sClient.Get(context.TODO(), client.ObjectKeyFromObject(ndUncorden), ndUncorden)
 			Expect(err).Error().To(HaveOccurred())
 			Expect(k8sErrors.IsNotFound(err)).To(BeTrue())
+			// expect 1 event
+			Expect(len(fakeRecorder.Events)).To(Equal(1))
 		})
 
 		It("should reconcile a deleting inactive CR should not uncorden node", func() {
