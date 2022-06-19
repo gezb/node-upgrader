@@ -31,6 +31,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
+	"k8s.io/client-go/tools/record"
 	"k8s.io/klog"
 	"k8s.io/kubectl/pkg/cmd/util"
 	"k8s.io/kubectl/pkg/drain"
@@ -55,9 +56,10 @@ func (e InvalidNodeVersionError) Error() string {
 // NodeDrainReconciler reconciles a NodeDrain object
 type NodeDrainReconciler struct {
 	client.Client
-	Scheme  *runtime.Scheme
-	logger  logr.Logger
-	drainer *drain.Helper
+	Scheme   *runtime.Scheme
+	logger   logr.Logger
+	recorder record.EventRecorder
+	drainer  *drain.Helper
 }
 
 //+kubebuilder:rbac:groups=gezb,resources=nodedrains,verbs=get;list;watch;create;update;patch;delete
@@ -98,6 +100,7 @@ func (r *NodeDrainReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		r.logger.Info(fmt.Sprintf("Failed to parse Expected Node Sematic version from `%s` - Aborting Reconcile", instance.Spec.ExpectedK8sVersion))
 		return ctrl.Result{}, nil
 	}
+	// Add finalizer when object is created
 	if instance.ObjectMeta.DeletionTimestamp.IsZero() {
 		if !ContainsString(instance.ObjectMeta.Finalizers, gezbv1.Finalizer) {
 			instance.ObjectMeta.Finalizers = append(instance.ObjectMeta.Finalizers, gezbv1.Finalizer)
@@ -118,6 +121,7 @@ func (r *NodeDrainReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 			if instance.Spec.Active {
 				if node.Spec.Unschedulable {
 					r.logger.Info(fmt.Sprintf("Uncordening node %s", nodeName))
+					r.recorder.Event(instance, corev1.EventTypeNormal, "Updated", "Node uncordened")
 					err := drain.RunCordonOrUncordon(r.drainer, node, false)
 					if err != nil {
 						return ctrl.Result{}, err
@@ -147,18 +151,19 @@ func (r *NodeDrainReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		return r.handleFetchNodeError(instance, err)
 	}
 
-	// Add finalizer when object is created
-
-	if instance.Spec.Active {
+	if instance.Status.Phase != gezbv1.MaintenanceSucceeded && instance.Spec.Active {
 		r.setOwnerRefToNode(instance, node)
 		if !node.Spec.Unschedulable {
 			r.logger.Info(fmt.Sprintf("Cordoning node %s", nodeName))
+			r.recorder.Event(instance, corev1.EventTypeNormal, "Updated", "Node cordened")
 			err := drain.RunCordonOrUncordon(r.drainer, node, true)
 			if err != nil {
 				return ctrl.Result{}, err
 			}
 		}
 		if instance.Spec.Drain {
+			r.logger.Info(fmt.Sprintf("Draining node %s", nodeName))
+			r.recorder.Event(instance, corev1.EventTypeNormal, "Updated", "Node drain started")
 			err = drain.RunNodeDrain(r.drainer, nodeName)
 			if err != nil {
 				return ctrl.Result{}, err
@@ -191,6 +196,7 @@ func (r *NodeDrainReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 // SetupWithManager sets up the controller with the Manager.
 func (r *NodeDrainReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	err := initDrainer(r, mgr.GetConfig())
+	r.recorder = mgr.GetEventRecorderFor("NodeDrain")
 	if err != nil {
 		return err
 	}
@@ -265,11 +271,13 @@ func (r *NodeDrainReconciler) handleFetchNodeError(instance *gezbv1.NodeDrain, e
 		if instance.Status.Phase != gezbv1.MaintenanceInvalid {
 			instance.Status.Phase = gezbv1.MaintenanceInvalid
 			instance.Status.PhaseReason = gezbv1.FailureReasonInvalidNodeVersion
+			r.recorder.Event(instance, corev1.EventTypeWarning, "Error", string(gezbv1.FailureReasonInvalidNodeVersion))
 		}
 	default:
 		if instance.Status.Phase != gezbv1.MaintenanceFailed {
 			instance.Status.Phase = gezbv1.MaintenanceFailed
 			instance.Status.PhaseReason = gezbv1.FailureReasonNodeNotFound
+			r.recorder.Event(instance, corev1.EventTypeWarning, "Error", string(gezbv1.FailureReasonNodeNotFound))
 		}
 	}
 	instance.Status.LastError = err.Error()

@@ -42,8 +42,8 @@ const (
 	// MaintenanceFailed - maintenance has failed
 	MaintenanceFailed MaintenancePhase = "Failed"
 
-	FailureReasonNodeNotFound       PhaseReason = "Node specified in the NodeDrain cannot be found"
-	FailureReasonInvalidNodeVersion PhaseReason = "Node Verion does not match the version in the NodeDrain"
+	FailureReasonNodeNotFound       PhaseReason = "Node specified in the NodeDrain CRD cannot be found"
+	FailureReasonInvalidNodeVersion PhaseReason = "Node Version does not match the version in the NodeDrain CRD"
 )
 
 // EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
